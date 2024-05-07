@@ -1,0 +1,75 @@
+#include <stdio.h>
+
+#include "hardware/i2c.h"
+#include "pico/binary_info.h"
+#include "pico/stdlib.h"
+#define ADDR 0x52 
+
+int main() {
+    stdio_init_all();
+    const uint BLUE_LED_PIN = 20;
+    const uint GREEN_LED_PIN = 19;
+    const uint RED_LED_PIN = 18;
+   
+    gpio_init(BLUE_LED_PIN);
+    gpio_set_dir(BLUE_LED_PIN, GPIO_OUT);
+    
+    gpio_init(GREEN_LED_PIN);
+    gpio_set_dir(GREEN_LED_PIN, GPIO_OUT);
+
+    gpio_init(RED_LED_PIN);
+    gpio_set_dir(RED_LED_PIN, GPIO_OUT);
+
+    // I2C is "open drain", pull ups to keep signal high when no data is being sent
+    i2c_init(i2c1, 100 * 1000);
+    gpio_set_function(2, GPIO_FUNC_I2C);
+    gpio_set_function(3, GPIO_FUNC_I2C);
+    gpio_pull_up(2);
+    gpio_pull_up(3);
+
+	//
+    uint8_t startup_sequence1[] = {0xF0,0x55};
+    // uint8_t startup_sequence1[] = {0x55,0xF0};
+    uint8_t startup_sequence2[] = {0xFB,0x00};
+    // uint8_t startup_sequence2[] = {0x00,0xFB};
+    uint8_t startup_sequence3[] = {0x40,0x00};
+
+    uint8_t buf[6];
+    i2c_write_blocking(i2c1, ADDR, startup_sequence1, 2, false);  // true to keep master control of bus
+    sleep_ms(100);
+    i2c_write_blocking(i2c1, ADDR, startup_sequence2, 2, false);  // true to keep master control of bus
+    // i2c_write_blocking(i2c1, ADDR, startup_sequence3, 2, false);  // true to keep master control of bus
+    uint16_t count = 0;
+    uint8_t blink = 0;
+    int ax = 0, ay = 0, az = 0;
+    int z = 0;
+    int c = 0;
+    int jx = 0, jy = 0;
+
+
+
+    while (1) {
+	uint8_t read_cmd[] = {0x00};
+	int w1 = i2c_write_blocking(i2c1, ADDR, read_cmd, 1, false);
+	sleep_ms(2);
+    	int w2 = i2c_read_blocking(i2c1, ADDR, buf, 6, false);  // false, we're done reading
+	count++;
+	if (count > 100) {
+		printf("ax: %d ay: %d az: %d jx: %d jy: %d z: %d c: %d\n",ax,ay,az,jx,jy,z,c);
+		gpio_put(BLUE_LED_PIN, blink);
+		blink = !blink;
+		count = 0;
+	}
+	ax = ((buf[5] & 0xC0) >> 6) | (buf[2] << 2);
+	ay = ((buf[5] & 0x30) >> 4) | (buf[3] << 2);
+	az = ((buf[5] & 0x0C) >> 2) | (buf[4] << 2);
+	jx = buf[0];
+	jy = buf[1];
+	z = buf[5] & 0x01;
+	c = buf[5] & 0x02;
+
+	gpio_put(GREEN_LED_PIN, !(buf[5] & 0x02));
+	gpio_put(RED_LED_PIN, !(buf[5] & 0x01));
+	sleep_ms(6);
+    }
+}
